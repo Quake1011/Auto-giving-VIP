@@ -5,5 +5,5 @@ Simple autogive VIP for new players by db check
 - sm_autogive_group - Group for auto-giving to new player
 
 ## Require
-MYSQL/SQLITE
-VIP CORE(R1KO)
+- MYSQL/SQLITE
+- VIP CORE(R1KO)
