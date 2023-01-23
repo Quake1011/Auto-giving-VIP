@@ -1,7 +1,7 @@
 #include <vip_core>
 
 #define PLUGIN_NAME 	"AutoGiveVIP"
-#define PLUGIN_VERSION 	"0.0.1"
+#define PLUGIN_VERSION 	"0.0.2"
 
 public Plugin myinfo = 
 { 
@@ -15,6 +15,7 @@ public Plugin myinfo =
 ConVar cvGroup;
 Database db;
 char sGroup[256];
+Handle hNewTimer[MAXPLAYERS+1];
 
 public void OnPluginStart()
 {
@@ -37,22 +38,53 @@ public void OnClientPostAdminCheck(int client)
 	GetClientAuthId(client, AuthId_Steam2, auth, sizeof(auth));
 	if(db != INVALID_HANDLE)
 	{
-		SQL_FormatQuery(db, sQuery, sizeof(sQuery), "INSERT INTO `autogivevip` (`status`, `steam`) VALUES ('%i', '%s')", GetTime(), auth);
+		SQL_FormatQuery(db, sQuery, sizeof(sQuery), "INSERT INTO `autogivevip` (`status`, `steam`) VALUES ('off', '%s')", auth);
 		SQL_FastQuery(db, sQuery);
-		
-		GetClientAuthId(client, AuthId_Steam2, auth, sizeof(auth));
-		SQL_FormatQuery(db, sQuery, sizeof(sQuery), "SELECT * FROM autogivevip WHERE steam = '%s'", auth);
-		db.Query(SQLCheck, sQuery, client, DBPrio_High);		
+		hNewTimer[client] = CreateTimer(5.0, TimerAUTOGIVE, client);	
 	}
+}
+
+public void OnClientDisconnect(int client)
+{
+	if(hNewTimer[client] != INVALID_HANDLE)
+	{
+		KillTimer(hNewTimer[client]);
+		hNewTimer[client] = null;
+	}
+}
+
+public Action TimerAUTOGIVE(Handle hTimer, int client)
+{
+	char sQuery[256], auth[22];
+	GetClientAuthId(client, AuthId_Steam2, auth, sizeof(auth));
+	SQL_FormatQuery(db, sQuery, sizeof(sQuery), "SELECT * FROM `autogivevip` WHERE steam = '%s'", auth);
+	db.Query(SQLCheck, sQuery, client, DBPrio_High);
+	return Plugin_Handled;
 }
 
 public void SQLCheck(Database hdb, DBResultSet results, const char[] error, int client)
 {
+	char tmp[22], sQuery[256];
 	if(!error[0] && results != INVALID_HANDLE)
+	{	
 		if(results.HasResults && results.RowCount > 0)
+		{	
 			if(results.FetchRow())
-				if(results.FetchInt(0) == GetTime())
-					VIP_GiveClientVIP(0, client, 1209600, sGroup, true);							
+			{	
+				if(results.FetchString(0, tmp, sizeof(tmp)))
+				{	
+					if(StrEqual(tmp, "off"))
+					{
+						char temp[256];
+						if(!VIP_GetClientVIPGroup(client, temp, sizeof(temp))) VIP_GiveClientVIP(0, client, 1209600, sGroup, true);
+						results.FetchString(1, tmp, sizeof(tmp));
+						SQL_FormatQuery(db, sQuery, sizeof(sQuery), "UPDATE `autogivevip` SET `status` = 'on' WHERE steam = '%s'", tmp);
+						SQL_FastQuery(db, sQuery);
+					}
+				}
+			}
+		}
+	}					
 }
 
 public void SQLConnectCB(Database hdb, const char[] error, any data)
@@ -63,7 +95,7 @@ public void SQLConnectCB(Database hdb, const char[] error, any data)
 		LogMessage("AutoGive successfully connected");
 		char sQuery[512];
 		SQL_FormatQuery(db, sQuery, sizeof(sQuery), "CREATE TABLE IF NOT EXISTS `autogivevip` (\
-													`status` INTEGER(20),\
+													`status` VARCHAR(20),\
 													`steam`	VARCHAR(22) PRIMARY KEY)");
 		db.Query(SQLCreateTable, sQuery, _, DBPrio_High);
 	}
